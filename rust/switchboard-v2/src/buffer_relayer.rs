@@ -2,6 +2,7 @@ use super::error::SwitchboardError;
 use super::SWITCHBOARD_PROGRAM_ID;
 use anchor_lang::prelude::*;
 use anchor_lang::{Discriminator, Owner};
+use arrayref::array_ref;
 
 #[derive(AnchorDeserialize, Default, Debug)]
 pub struct BufferRelayerAccountData {
@@ -57,15 +58,14 @@ impl BufferRelayerAccountData {
     ///
     /// let buffer_account = BufferRelayerAccountData::new(buffer_account_info)?;
     /// ```
-    pub fn new<'a>(
-        switchboard_buffer: &'a AccountInfo,
+    pub fn new(
+        switchboard_buffer: &AccountInfo,
     ) -> anchor_lang::Result<Box<BufferRelayerAccountData>> {
         let data = switchboard_buffer.try_borrow_data()?;
 
-        let mut disc_bytes = [0u8; 8];
-        disc_bytes.copy_from_slice(&data[..8]);
-        if disc_bytes != BufferRelayerAccountData::discriminator() {
-            return Err(SwitchboardError::AccountDiscriminatorMismatch.into());
+        let disc = array_ref![data, 0, 8];
+        if *disc != BufferRelayerAccountData::discriminator() {
+            return Err(error!(ErrorCode::AccountDiscriminatorMismatch));
         }
 
         let mut v_mut = &data[8..];
@@ -73,7 +73,7 @@ impl BufferRelayerAccountData {
     }
 
     pub fn get_result(&self) -> &Vec<u8> {
-        return &self.result;
+        &self.result
     }
 
     /// Check whether the buffer relayer has been updated in the last max_staleness seconds
@@ -94,7 +94,7 @@ impl BufferRelayerAccountData {
         let staleness = unix_timestamp - self.latest_confirmed_round.round_open_timestamp;
         if staleness > max_staleness {
             msg!("Feed has not been updated in {} seconds!", staleness);
-            return Err(SwitchboardError::StaleFeed.into());
+            return Err(error!(SwitchboardError::StaleFeed));
         }
         Ok(())
     }

@@ -7,6 +7,7 @@ use solana_program::program::{invoke, invoke_signed};
 // use std::cell::Ref;
 
 #[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Eq, PartialEq)]
+#[repr(u8)]
 pub enum SwitchboardPermission {
     /// queue authority has permitted an Oracle Account to heartbeat on it's queue and receive update requests. Oracles always need permissions to join a queue.
     PermitOracleHeartbeat = 1 << 0,
@@ -64,12 +65,12 @@ impl<'info> PermissionSet<'info> {
     ) -> anchor_lang::Result<Instruction> {
         let accounts = self.to_account_metas(None);
 
-        let mut data: Vec<u8> = PermissionSet::discriminator().try_to_vec()?;
-        let mut param_vec: Vec<u8> = params.try_to_vec()?;
-        data.append(&mut param_vec);
+        let mut data = Vec::with_capacity(8 + std::mem::size_of::<PermissionSetParams>());
 
-        let instruction = Instruction::new_with_bytes(program_id, &data, accounts);
-        Ok(instruction)
+        PermissionSet::discriminator().serialize(&mut data)?;
+        params.serialize(&mut data)?;
+
+        Ok(Instruction::new_with_bytes(program_id, &data, accounts))
     }
 
     pub fn invoke(
@@ -79,7 +80,7 @@ impl<'info> PermissionSet<'info> {
         enable: bool,
     ) -> ProgramResult {
         let cpi_params = PermissionSetParams { permission, enable };
-        let instruction = self.get_instruction(program.key.clone(), cpi_params)?;
+        let instruction = self.get_instruction(program.key(), cpi_params)?;
         let account_infos = self.to_account_infos();
 
         invoke(&instruction, &account_infos[..])
@@ -94,33 +95,33 @@ impl<'info> PermissionSet<'info> {
         signer_seeds: &[&[&[u8]]],
     ) -> ProgramResult {
         let cpi_params = PermissionSetParams { permission, enable };
-        let instruction = self.get_instruction(program.key.clone(), cpi_params)?;
+        let instruction = self.get_instruction(program.key(), cpi_params)?;
         let account_infos = self.to_account_infos();
 
         invoke_signed(&instruction, &account_infos[..], signer_seeds)
         // .map_err(|_| error!(SwitchboardError::VrfCpiSignedError))
     }
 
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        return vec![
-            self.permission.to_account_info().clone(),
-            self.authority.clone(),
-        ];
+    fn to_account_infos(&self) -> [AccountInfo<'info>; 2] {
+        [
+            self.permission.to_account_info(),
+            self.authority.to_account_info(),
+        ]
     }
 
     #[allow(unused_variables)]
     fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
-        return vec![
+        vec![
             AccountMeta {
                 pubkey: self.permission.key(),
                 is_signer: false,
                 is_writable: true,
             },
             AccountMeta {
-                pubkey: self.authority.key.clone(),
+                pubkey: self.authority.key(),
                 is_signer: true,
                 is_writable: false,
             },
-        ];
+        ]
     }
 }

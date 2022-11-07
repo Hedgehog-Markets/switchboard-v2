@@ -2,6 +2,7 @@
 use super::error::SwitchboardError;
 use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
+use arrayref::array_ref;
 use bytemuck::{Pod, Zeroable};
 use solana_program::entrypoint::ProgramResult;
 use solana_program::instruction::Instruction;
@@ -77,14 +78,14 @@ impl Default for FieldElementZC {
 }
 unsafe impl Pod for FieldElementZC {}
 unsafe impl Zeroable for FieldElementZC {}
-impl Into<FieldElementZC> for FieldElement51 {
-    fn into(self) -> FieldElementZC {
-        FieldElementZC { bytes: self.0 }
+impl From<FieldElementZC> for FieldElement51 {
+    fn from(value: FieldElementZC) -> FieldElement51 {
+        FieldElement51(value.bytes)
     }
 }
-impl Into<FieldElement51> for FieldElementZC {
-    fn into(self) -> FieldElement51 {
-        FieldElement51(self.bytes)
+impl From<FieldElement51> for FieldElementZC {
+    fn from(value: FieldElement51) -> FieldElementZC {
+        FieldElementZC { bytes: value.0 }
     }
 }
 
@@ -119,23 +120,23 @@ impl Default for CompletedPointZC {
 }
 unsafe impl Pod for CompletedPoint {}
 unsafe impl Zeroable for CompletedPoint {}
-impl Into<CompletedPointZC> for CompletedPoint {
-    fn into(self) -> CompletedPointZC {
-        CompletedPointZC {
-            X: self.X.into(),
-            Y: self.Y.into(),
-            Z: self.Z.into(),
-            T: self.T.into(),
+impl From<CompletedPointZC> for CompletedPoint {
+    fn from(value: CompletedPointZC) -> CompletedPoint {
+        CompletedPoint {
+            X: value.X.into(),
+            Y: value.Y.into(),
+            Z: value.Z.into(),
+            T: value.T.into(),
         }
     }
 }
-impl Into<CompletedPoint> for CompletedPointZC {
-    fn into(self) -> CompletedPoint {
-        CompletedPoint {
-            X: self.X.into(),
-            Y: self.Y.into(),
-            Z: self.Z.into(),
-            T: self.T.into(),
+impl From<CompletedPoint> for CompletedPointZC {
+    fn from(value: CompletedPoint) -> CompletedPointZC {
+        CompletedPointZC {
+            X: value.X.into(),
+            Y: value.Y.into(),
+            Z: value.Z.into(),
+            T: value.T.into(),
         }
     }
 }
@@ -192,21 +193,21 @@ impl Default for ProjectivePointZC {
 }
 unsafe impl Pod for ProjectivePoint {}
 unsafe impl Zeroable for ProjectivePoint {}
-impl Into<ProjectivePointZC> for ProjectivePoint {
-    fn into(self) -> ProjectivePointZC {
-        ProjectivePointZC {
-            X: self.X.into(),
-            Y: self.Y.into(),
-            Z: self.Z.into(),
+impl From<ProjectivePointZC> for ProjectivePoint {
+    fn from(value: ProjectivePointZC) -> ProjectivePoint {
+        ProjectivePoint {
+            X: value.X.into(),
+            Y: value.Y.into(),
+            Z: value.Z.into(),
         }
     }
 }
-impl Into<ProjectivePoint> for ProjectivePointZC {
-    fn into(self) -> ProjectivePoint {
-        ProjectivePoint {
-            X: self.X.into(),
-            Y: self.Y.into(),
-            Z: self.Z.into(),
+impl From<ProjectivePoint> for ProjectivePointZC {
+    fn from(value: ProjectivePoint) -> ProjectivePointZC {
+        ProjectivePointZC {
+            X: value.X.into(),
+            Y: value.Y.into(),
+            Z: value.Z.into(),
         }
     }
 }
@@ -417,13 +418,12 @@ impl VrfAccountData {
     ) -> anchor_lang::Result<Ref<'info, VrfAccountData>> {
         let data = switchboard_vrf.try_borrow_data()?;
         if data.len() < VrfAccountData::discriminator().len() {
-            return Err(ErrorCode::AccountDiscriminatorNotFound.into());
+            return Err(error!(ErrorCode::AccountDiscriminatorNotFound));
         }
 
-        let mut disc_bytes = [0u8; 8];
-        disc_bytes.copy_from_slice(&data[..8]);
-        if disc_bytes != VrfAccountData::discriminator() {
-            return Err(ErrorCode::AccountDiscriminatorMismatch.into());
+        let disc = array_ref![data, 0, 8];
+        if *disc != VrfAccountData::discriminator() {
+            return Err(error!(ErrorCode::AccountDiscriminatorMismatch));
         }
 
         Ok(Ref::map(data, |data| {
@@ -523,10 +523,10 @@ impl<'info> VrfRequestRandomness<'info> {
         permission_bump: u8,
     ) -> ProgramResult {
         let cpi_params = VrfRequestRandomnessParams {
-            permission_bump: permission_bump,
-            state_bump: state_bump,
+            permission_bump,
+            state_bump,
         };
-        let instruction = self.get_instruction(program.key.clone(), cpi_params)?;
+        let instruction = self.get_instruction(program.key(), cpi_params)?;
         let account_infos = self.to_account_infos();
 
         invoke(&instruction, &account_infos[..])
@@ -541,10 +541,10 @@ impl<'info> VrfRequestRandomness<'info> {
         signer_seeds: &[&[&[u8]]],
     ) -> ProgramResult {
         let cpi_params = VrfRequestRandomnessParams {
-            permission_bump: permission_bump,
-            state_bump: state_bump,
+            permission_bump,
+            state_bump,
         };
-        let instruction = self.get_instruction(program.key.clone(), cpi_params)?;
+        let instruction = self.get_instruction(program.key(), cpi_params)?;
         let account_infos = self.to_account_infos();
 
         invoke_signed(&instruction, &account_infos[..], signer_seeds)
@@ -552,86 +552,86 @@ impl<'info> VrfRequestRandomness<'info> {
     }
 
     fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        return vec![
-            self.authority.clone(),
-            self.vrf.clone(),
-            self.oracle_queue.clone(),
-            self.queue_authority.clone(),
-            self.data_buffer.clone(),
-            self.permission.clone(),
-            self.escrow.to_account_info().clone(),
-            self.payer_wallet.to_account_info().clone(),
-            self.payer_authority.clone(),
-            self.recent_blockhashes.clone(),
-            self.program_state.clone(),
-            self.token_program.clone(),
-        ];
+        vec![
+            self.authority.to_account_info(),
+            self.vrf.to_account_info(),
+            self.oracle_queue.to_account_info(),
+            self.queue_authority.to_account_info(),
+            self.data_buffer.to_account_info(),
+            self.permission.to_account_info(),
+            self.escrow.to_account_info(),
+            self.payer_wallet.to_account_info(),
+            self.payer_authority.to_account_info(),
+            self.recent_blockhashes.to_account_info(),
+            self.program_state.to_account_info(),
+            self.token_program.to_account_info(),
+        ]
     }
 
     #[allow(unused_variables)]
     fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
-        return vec![
+        vec![
             AccountMeta {
-                pubkey: self.authority.key.clone(),
+                pubkey: self.authority.key(),
                 is_signer: true, // overwrite, authority has to sign
                 is_writable: self.authority.is_writable,
             },
             AccountMeta {
-                pubkey: self.vrf.key.clone(),
+                pubkey: self.vrf.key(),
                 is_signer: self.vrf.is_signer,
                 is_writable: self.vrf.is_writable,
             },
             AccountMeta {
-                pubkey: self.oracle_queue.key.clone(),
+                pubkey: self.oracle_queue.key(),
                 is_signer: self.oracle_queue.is_signer,
                 is_writable: self.oracle_queue.is_writable,
             },
             AccountMeta {
-                pubkey: self.queue_authority.key.clone(),
+                pubkey: self.queue_authority.key(),
                 is_signer: self.queue_authority.is_signer,
                 is_writable: self.queue_authority.is_writable,
             },
             AccountMeta {
-                pubkey: self.data_buffer.key.clone(),
+                pubkey: self.data_buffer.key(),
                 is_signer: self.data_buffer.is_signer,
                 is_writable: self.data_buffer.is_writable,
             },
             AccountMeta {
-                pubkey: self.permission.key.clone(),
+                pubkey: self.permission.key(),
                 is_signer: self.permission.is_signer,
                 is_writable: self.permission.is_writable,
             },
             AccountMeta {
-                pubkey: self.escrow.to_account_info().key.clone(),
-                is_signer: self.escrow.to_account_info().is_signer,
-                is_writable: self.escrow.to_account_info().is_writable,
+                pubkey: self.escrow.key(),
+                is_signer: AsRef::<AccountInfo>::as_ref(&self.escrow).is_signer,
+                is_writable: AsRef::<AccountInfo>::as_ref(&self.escrow).is_writable,
             },
             AccountMeta {
-                pubkey: self.payer_wallet.to_account_info().key.clone(),
-                is_signer: self.payer_wallet.to_account_info().is_signer,
-                is_writable: self.payer_wallet.to_account_info().is_writable,
+                pubkey: self.payer_wallet.key(),
+                is_signer: AsRef::<AccountInfo>::as_ref(&self.payer_wallet).is_signer,
+                is_writable: AsRef::<AccountInfo>::as_ref(&self.payer_wallet).is_writable,
             },
             AccountMeta {
-                pubkey: self.payer_authority.key.clone(),
+                pubkey: self.payer_authority.key(),
                 is_signer: self.payer_authority.is_signer,
                 is_writable: self.payer_authority.is_writable,
             },
             AccountMeta {
-                pubkey: self.recent_blockhashes.key.clone(),
+                pubkey: self.recent_blockhashes.key(),
                 is_signer: self.recent_blockhashes.is_signer,
                 is_writable: self.recent_blockhashes.is_writable,
             },
             AccountMeta {
-                pubkey: self.program_state.key.clone(),
+                pubkey: self.program_state.key(),
                 is_signer: self.program_state.is_signer,
                 is_writable: self.program_state.is_writable,
             },
             AccountMeta {
-                pubkey: self.token_program.key.clone(),
+                pubkey: self.token_program.key(),
                 is_signer: self.token_program.is_signer,
                 is_writable: self.token_program.is_writable,
             },
-        ];
+        ]
     }
 }
 
@@ -669,8 +669,8 @@ impl<'info> VrfSetCallback<'info> {
     }
 
     pub fn invoke(&self, program: AccountInfo<'info>, callback: Callback) -> ProgramResult {
-        let cpi_params = VrfSetCallbackParams { callback: callback };
-        let instruction = self.get_instruction(program.key.clone(), cpi_params)?;
+        let cpi_params = VrfSetCallbackParams { callback };
+        let instruction = self.get_instruction(program.key(), cpi_params)?;
         let account_infos = self.to_account_infos();
 
         invoke(&instruction, &account_infos[..])
@@ -682,36 +682,38 @@ impl<'info> VrfSetCallback<'info> {
         callback: Callback,
         signer_seeds: &[&[&[u8]]],
     ) -> ProgramResult {
-        let cpi_params = VrfSetCallbackParams { callback: callback };
-        let instruction = self.get_instruction(program.key.clone(), cpi_params)?;
+        let cpi_params = VrfSetCallbackParams { callback };
+        let instruction = self.get_instruction(program.key(), cpi_params)?;
         let account_infos = self.to_account_infos();
 
         invoke_signed(&instruction, &account_infos[..], signer_seeds)
     }
 
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        return vec![self.vrf.clone(), self.authority.clone()];
+    fn to_account_infos(&self) -> [AccountInfo<'info>; 2] {
+        [self.vrf.to_account_info(), self.authority.to_account_info()]
     }
 
     #[allow(unused_variables)]
     fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
-        return vec![
+        vec![
             AccountMeta {
-                pubkey: self.vrf.key.clone(),
+                pubkey: self.vrf.key(),
                 is_signer: false,
                 is_writable: true,
             },
             AccountMeta {
-                pubkey: self.authority.key.clone(),
+                pubkey: self.authority.key(),
                 is_signer: true,
                 is_writable: false,
             },
-        ];
+        ]
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::SWITCHBOARD_V2_DEVNET;
+
     use super::*;
 
     const VRF_ACCOUNT_DATA: [u8; 29058] = [
@@ -1744,7 +1746,7 @@ mod tests {
 
     #[test]
     fn test_vrf_decoding() {
-        let mut vrf_data = VRF_ACCOUNT_DATA.clone();
+        let mut vrf_data = VRF_ACCOUNT_DATA;
         let mut lamports = 0;
         let vrf_account_info = AccountInfo::new(
             &VRF_PUBKEY,

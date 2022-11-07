@@ -11,8 +11,6 @@ pub enum SwitchboardError {
     DecimalConversionError,
     #[msg("An integer overflow occurred")]
     IntegerOverflowError,
-    #[msg("Account discriminator did not match")]
-    AccountDiscriminatorMismatch,
     #[msg("Vrf value is empty")]
     VrfEmptyError,
     #[msg("Failed to send requestRandomness instruction")]

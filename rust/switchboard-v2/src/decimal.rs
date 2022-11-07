@@ -91,7 +91,7 @@ impl TryInto<u64> for SwitchboardDecimal {
     fn try_into(self) -> anchor_lang::Result<u64> {
         let dec: Decimal = (&self).try_into().unwrap();
         dec.to_u64()
-            .ok_or(error!(SwitchboardError::IntegerOverflowError))
+            .ok_or_else(|| error!(SwitchboardError::IntegerOverflowError))
     }
 }
 
@@ -100,7 +100,7 @@ impl TryInto<i64> for SwitchboardDecimal {
     fn try_into(self) -> anchor_lang::Result<i64> {
         let dec: Decimal = (&self).try_into().unwrap();
         dec.to_i64()
-            .ok_or(error!(SwitchboardError::IntegerOverflowError))
+            .ok_or_else(|| error!(SwitchboardError::IntegerOverflowError))
     }
 }
 
@@ -109,7 +109,7 @@ impl TryInto<f64> for SwitchboardDecimal {
     fn try_into(self) -> anchor_lang::Result<f64> {
         let dec: Decimal = (&self).try_into().unwrap();
         dec.to_f64()
-            .ok_or(error!(SwitchboardError::IntegerOverflowError))
+            .ok_or_else(|| error!(SwitchboardError::IntegerOverflowError))
     }
 }
 
@@ -130,18 +130,10 @@ mod tests {
 
     #[test]
     fn empty_switchboard_decimal_is_false() {
-        let swb_decimal = SwitchboardDecimal {
+        assert!(!bool::from(SwitchboardDecimal {
             mantissa: 0,
             scale: 0,
-        };
-        let b: bool = swb_decimal.into();
-        assert_eq!(b, false);
-        let swb_decimal_neg = SwitchboardDecimal {
-            mantissa: -0,
-            scale: 0,
-        };
-        let b: bool = swb_decimal_neg.into();
-        assert_eq!(b, false);
+        }));
     }
 
     #[test]

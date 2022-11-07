@@ -1,7 +1,6 @@
 use super::decimal::SwitchboardDecimal;
-use super::error::SwitchboardError;
 use anchor_lang::prelude::*;
-use bytemuck::{try_cast_slice, try_from_bytes};
+use arrayref::array_ref;
 use bytemuck::{Pod, Zeroable};
 use std::cell::Ref;
 use superslice::*;
@@ -35,17 +34,18 @@ impl<'a> AggregatorHistoryBuffer<'a> {
     ) -> anchor_lang::Result<AggregatorHistoryBuffer<'a>> {
         let data = history_buffer.try_borrow_data()?;
 
-        let mut disc_bytes = [0u8; 8];
-        disc_bytes.copy_from_slice(&data[..8]);
-        if disc_bytes != *b"BUFFERxx" {
-            return Err(SwitchboardError::AccountDiscriminatorMismatch.into());
+        let disc = array_ref![data, 0, 8];
+        if disc != b"BUFFERxx" {
+            return Err(error!(ErrorCode::AccountDiscriminatorMismatch));
         }
-        let insertion_idx: u32 = try_from_bytes::<u32>(&data[8..12]).unwrap().clone();
-        let rows = Ref::map(data, |data| try_cast_slice(&data[12..]).unwrap());
-        return Ok(Self {
-            insertion_idx: insertion_idx as usize,
-            rows: rows,
-        });
+
+        let insertion_idx = u32::from_le_bytes(*array_ref![data, 8, 4]) as usize;
+        let rows = Ref::map(data, |data| bytemuck::try_cast_slice(&data[12..]).unwrap());
+
+        Ok(Self {
+            insertion_idx,
+            rows,
+        })
     }
 
     /// Return the previous row in the history buffer for a given timestamp
@@ -92,11 +92,6 @@ impl<'a> AggregatorHistoryBuffer<'a> {
 mod tests {
     use super::*;
     use crate::*;
-    impl<'info, 'a> Default for AggregatorHistoryBuffer<'a> {
-        fn default() -> Self {
-            unsafe { std::mem::zeroed() }
-        }
-    }
 
     // insertion_idx = 1
     // 1646249940   - 100.6022611525
@@ -133,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_history_buffer() {
-        let mut history_data = HISTORY_BUFFER_DATA.clone();
+        let mut history_data = HISTORY_BUFFER_DATA;
         let mut lamports = 0;
         let history_account_info = AccountInfo::new(
             &HISTORY_BUFFER_PUBKEY,
@@ -271,7 +266,7 @@ mod tests {
         };
 
         // Get past result
-        match history_buffer.lower_bound(0646249911) {
+        match history_buffer.lower_bound(646249911) {
             None => (),
             Some(row) => panic!("retrieved row when no value was expected {:?}", row.value),
         };

@@ -1,6 +1,7 @@
 use super::decimal::SwitchboardDecimal;
 use super::error::SwitchboardError;
 use anchor_lang::prelude::*;
+use arrayref::array_ref;
 use rust_decimal::Decimal;
 use std::cell::Ref;
 
@@ -50,7 +51,7 @@ pub struct AggregatorRound {
 // #[zero_copy]
 #[account(zero_copy)]
 #[repr(packed)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct AggregatorAccountData {
     /// Name of the aggregator to store on-chain.
     pub name: [u8; 32],
@@ -132,17 +133,16 @@ impl AggregatorAccountData {
     /// let data_feed = AggregatorAccountData::new(feed_account_info)?;
     /// ```
     pub fn new<'info>(
-        switchboard_feed: &'info AccountInfo<'info>,
+        switchboard_feed: &'info AccountInfo,
     ) -> anchor_lang::Result<Ref<'info, AggregatorAccountData>> {
         let data = switchboard_feed.try_borrow_data()?;
         if data.len() < AggregatorAccountData::discriminator().len() {
-            return Err(ErrorCode::AccountDiscriminatorNotFound.into());
+            return Err(error!(ErrorCode::AccountDiscriminatorNotFound));
         }
 
-        let mut disc_bytes = [0u8; 8];
-        disc_bytes.copy_from_slice(&data[..8]);
-        if disc_bytes != AggregatorAccountData::discriminator() {
-            return Err(ErrorCode::AccountDiscriminatorMismatch.into());
+        let disc = array_ref![data, 0, 8];
+        if *disc != AggregatorAccountData::discriminator() {
+            return Err(error!(ErrorCode::AccountDiscriminatorMismatch));
         }
 
         Ok(Ref::map(data, |data| {
@@ -162,7 +162,7 @@ impl AggregatorAccountData {
     /// ```
     pub fn get_result(&self) -> anchor_lang::Result<SwitchboardDecimal> {
         if self.min_oracle_results > self.latest_confirmed_round.num_success {
-            return Err(SwitchboardError::InvalidAggregatorRound.into());
+            return Err(error!(SwitchboardError::InvalidAggregatorRound));
         }
         Ok(self.latest_confirmed_round.result)
     }
@@ -182,7 +182,7 @@ impl AggregatorAccountData {
         max_confidence_interval: SwitchboardDecimal,
     ) -> anchor_lang::Result<()> {
         if self.latest_confirmed_round.std_deviation > max_confidence_interval {
-            return Err(SwitchboardError::ConfidenceIntervalExceeded.into());
+            return Err(error!(SwitchboardError::ConfidenceIntervalExceeded));
         }
         Ok(())
     }
@@ -191,16 +191,16 @@ impl AggregatorAccountData {
     /// oracle value) from all oracles.
     pub fn check_variace(&self, max_variance: Decimal) -> anchor_lang::Result<()> {
         if max_variance > Decimal::ONE {
-            return Err(SwitchboardError::InvalidFunctionInput.into());
+            return Err(error!(SwitchboardError::InvalidFunctionInput));
         }
         let min: Decimal = self.latest_confirmed_round.min_response.try_into().unwrap();
         let max: Decimal = self.latest_confirmed_round.max_response.try_into().unwrap();
 
         if min < Decimal::ZERO || max < Decimal::ZERO || min > max {
-            return Err(SwitchboardError::AllowedVarianceExceeded.into());
+            return Err(error!(SwitchboardError::AllowedVarianceExceeded));
         }
         if min / max > max_variance {
-            return Err(SwitchboardError::AllowedVarianceExceeded.into());
+            return Err(error!(SwitchboardError::AllowedVarianceExceeded));
         }
         Ok(())
     }
@@ -223,7 +223,7 @@ impl AggregatorAccountData {
         let staleness = unix_timestamp - self.latest_confirmed_round.round_open_timestamp;
         if staleness > max_staleness {
             msg!("Feed has not been updated in {} seconds!", staleness);
-            return Err(SwitchboardError::StaleFeed.into());
+            return Err(error!(SwitchboardError::StaleFeed));
         }
         Ok(())
     }
@@ -236,58 +236,55 @@ impl AggregatorAccountData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    impl<'info> Default for AggregatorAccountData {
+    impl Default for AggregatorAccountData {
         fn default() -> Self {
             unsafe { std::mem::zeroed() }
         }
     }
 
     fn create_aggregator(lastest_round: AggregatorRound) -> AggregatorAccountData {
-        let mut aggregator = AggregatorAccountData::default();
-        aggregator.min_update_delay_seconds = 10;
-        aggregator.latest_confirmed_round = lastest_round;
-        aggregator.min_job_results = 10;
-        aggregator.min_oracle_results = 10;
-        return aggregator;
+        AggregatorAccountData {
+            min_update_delay_seconds: 10,
+            latest_confirmed_round: lastest_round,
+            min_job_results: 10,
+            min_oracle_results: 10,
+            ..Default::default()
+        }
     }
 
     fn create_round(value: f64, num_success: u32, num_error: u32) -> AggregatorRound {
-        let mut result = AggregatorRound::default();
-        result.num_success = num_success;
-        result.num_error = num_error;
-        result.result = SwitchboardDecimal::from_f64(value);
-        return result;
+        AggregatorRound {
+            num_success,
+            num_error,
+            result: SwitchboardDecimal::from_f64(value),
+            ..Default::default()
+        }
     }
 
     #[test]
     fn test_accept_current_on_sucess_count() {
         let lastest_round = create_round(100.0, 30, 0); // num success 30 > 10 min oracle result
+        let aggregator = create_aggregator(lastest_round);
 
-        let aggregator = create_aggregator(lastest_round.clone());
-        assert_eq!(
-            aggregator.get_result().unwrap(),
-            lastest_round.result.clone()
-        );
+        assert_eq!(aggregator.get_result().unwrap(), lastest_round.result);
     }
 
     #[test]
     fn test_reject_current_on_sucess_count() {
         let lastest_round = create_round(100.0, 5, 0); // num success 30 < 10 min oracle result
-        let aggregator = create_aggregator(lastest_round.clone());
+        let aggregator = create_aggregator(lastest_round);
 
-        assert!(
-            aggregator.get_result().is_err(),
-            "Aggregator is not currently populated with a valid round."
-        );
+        aggregator
+            .get_result()
+            .expect_err("Aggregator is not currently populated with a valid round");
     }
 
     #[test]
     fn test_no_valid_aggregator_result() {
         let aggregator = create_aggregator(AggregatorRound::default());
 
-        assert!(
-            aggregator.get_result().is_err(),
-            "Aggregator is not currently populated with a valid round."
-        );
+        aggregator
+            .get_result()
+            .expect_err("Aggregator is not currently populated with a valid round");
     }
 }
